@@ -35,3 +35,6 @@ def generate_index():
     # store it for later
     index.storage_context.persist(STORAGE_DIR)
     logger.info(f"Finished creating new index. Stored in {STORAGE_DIR}")
+
+if __name__ == "__main__":
+    generate_index()

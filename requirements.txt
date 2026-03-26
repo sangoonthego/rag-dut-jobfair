@@ -1,0 +1,30 @@
+# ==========================================
+# 1. CORE FRAMEWORK (Tầng Điều phối)
+# ==========================================
+llama-index-core>=0.10.0
+llama-index>=0.10.0
+
+# ==========================================
+# 2. LOCAL AI DRIVERS (Tầng Động cơ LLM & Embedding)
+# ==========================================
+# Giao tiếp với Ollama (Qwen2.5)
+llama-index-llms-ollama
+# Chạy Embedding Model (bge-m3) ngay trên máy
+llama-index-embeddings-huggingface
+
+# ==========================================
+# 3. DATA INGESTION & PARSERS (Tầng Đọc Dữ liệu)
+# ==========================================
+# Hỗ trợ đọc các loại file phổ biến trong thư mục data/
+llama-index-readers-file
+docx2txt>=0.8
+pypdf>=4.0.0
+
+# ==========================================
+# 4. API SERVER (Tầng Backend - FastAPI)
+# ==========================================
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic>=2.0.0
+python-multipart
