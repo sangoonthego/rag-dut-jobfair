@@ -7,9 +7,11 @@ from src.settings import init_settings
 from src.index import STORAGE_DIR
 from src.query import create_hybrid_query_engine 
 
+# 💡 IMPORT HANDLER JSON TĨNH VÀO ĐÂY
+from src.curriculum_handler import get_timeline_response
+
 app = FastAPI(title="DUT JobFair RAG API")
 
-# Cấu hình CORS để Flutter gọi không bị chặn
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,10 +19,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 💡 EXPERT FIX: Thêm trường major để nhận ngữ cảnh từ Flutter
 class ChatRequest(BaseModel):
     message: str
+    major: str = "Công nghệ thông tin" # Giá trị mặc định nếu Flutter quên gửi
 
-# Biến global để lưu trữ engine
 query_engine = None
 
 @app.on_event("startup")
@@ -39,30 +42,62 @@ async def startup_event():
         
     print("3. Khởi tạo Hybrid Engine...")
     query_engine = create_hybrid_query_engine(index)
-    print("🚀 API ĐÃ SẴN SÀNG NHẬN REQUEST TỪ FLUTTER!")
+    print("API ĐÃ SẴN SÀNG NHẬN REQUEST TỪ FLUTTER!")
 
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
-    if not query_engine:
-        raise HTTPException(status_code=500, detail="AI Engine chưa khởi tạo xong.")
+    user_msg = request.message.lower()
+    print(f"ĐÃ NHẬN ĐƯỢC CÂU HỎI TỪ FLUTTER: '{request.message}' | NGÀNH: '{request.major}'")
     
-    try:
-        # Gửi query tới LlamaIndex
-        response = query_engine.query(request.message)
-        
-        # Bóc tách metadata để trả về cho Flutter làm UI "Trích dẫn nguồn"
-        citations = []
-        for node in response.source_nodes:
-            meta = node.node.metadata
-            citations.append({
-                "company": meta.get('company_name', 'N/A'),
-                "job": meta.get('job_title', 'N/A'),
-                "score": round(node.score, 4)
-            })
-            
+    # -------------------------------------------------------------
+    # 🚀 LUỒNG 1: TRẢ VỀ LỘ TRÌNH TỪ FILE JSON (0.001s)
+    # -------------------------------------------------------------
+    if any(kw in user_msg for kw in ["lộ trình", "môn học", "trên trường"]):
+        print("-> [ROUTER] Đã điều hướng vào luồng TIMELINE JSON")
+        response_data = get_timeline_response(request.major)
+        return response_data
+    
+    # -------------------------------------------------------------
+    # 🚀 LUỒNG 2: YÊU CẦU FLUTTER RENDER DANH SÁCH CÔNG TY
+    # -------------------------------------------------------------
+    elif any(kw in user_msg for kw in ["công ty", "tuyển dụng", "matching", "tuyển"]):
+        print("-> [ROUTER] Đã điều hướng vào luồng COMPANY LIST WIDGET")
         return {
-            "reply": str(response),
-            "citations": citations
+            "type": "widget",
+            "action": "render_company_list",
+            "major": request.major
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    # -------------------------------------------------------------
+    # 🧠 LUỒNG 3: FALLBACK VỀ LLAMA-INDEX RAG (Dữ liệu sâu/Hỏi tự do)
+    # -------------------------------------------------------------
+    else:
+        print("-> [ROUTER] Không khớp hardcode, kích hoạt LLAMA-INDEX RAG...")
+        if not query_engine:
+            raise HTTPException(status_code=500, detail="AI Engine chưa khởi tạo xong.")
+        
+        try:
+            response = query_engine.query(request.message)
+            
+            citations = []
+            if hasattr(response, "source_nodes"):
+                for node in response.source_nodes:
+                    meta = node.node.metadata
+                    # Đảm bảo handle lỗi nếu node.score bị None
+                    score = round(node.score, 4) if node.score is not None else 0.0
+                    citations.append({
+                        "company": meta.get('company_name', 'N/A'),
+                        "job": meta.get('job_title', 'N/A'),
+                        "score": score
+                    })
+                
+            # 💡 Lưu ý: Đổi key 'reply' thành 'content' và thêm 'type': 'text' 
+            # để đồng bộ chuẩn format với các luồng ở trên cho Flutter dễ parse
+            return {
+                "type": "text",
+                "content": str(response),
+                "citations": citations
+            }
+        except Exception as e:
+            print(f"[LỖI RAG] {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
